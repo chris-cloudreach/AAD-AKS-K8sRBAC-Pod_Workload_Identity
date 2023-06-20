@@ -1,0 +1,132 @@
+# MAKE SURE YOU PUT MSI id
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: wid
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab4-task1
+  labels:
+    app: lab4-task1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: lab4-task1
+  template:
+    metadata:
+      labels:
+        app: lab4-task1
+    spec:
+      containers:
+      - name: api
+        image: chineduacr.azurecr.io/apib:v1.1
+        imagePullPolicy: IfNotPresent
+        resources: {}
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: workloadidsa
+  namespace: wid
+  annotations:
+    azure.workload.identity/client-id: e754e331-b19c-43f2-89e6-2357d98d21cd
+  labels:
+    azure.workload.identity/use: "true"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: quick-start
+  namespace: wid
+  labels:
+    azure.workload.identity/use: "true"
+spec:
+  serviceAccountName: workloadidsa
+  containers: 
+    - image: ghcr.io/azure/azure-workload-identity/msal-go
+    # - image: chineduacr.azurecr.io/apib:v1.1
+      name: oidc
+      env:
+      - name: KEYVAULT_URL
+        value: https://oidc-kv.vault.azure.net
+      - name: SECRET_NAME
+        value: OIDC-secret
+      # - name: AZURE_CLIENT_ID
+      #   value: f30b1622-8a11-4287-aecc-775d6c6f28c2
+  nodeSelector:
+    kubernetes.io/os: linux
+---
+# apiVersion: v1
+# kind: Pod
+# metadata:
+#   name: jump
+#   namespace: wid
+# spec:
+#   containers:
+#   - image: smallstep/step-cli
+#     name: step-cli
+#     command:
+#     - /bin/sh
+#     - -c
+#     - cat /var/run/secrets/tokens/test-token | step crypto jwt inspect --insecure
+#     volumeMounts:
+#     - mountPath: /var/run/secrets/tokens
+#       name: test-token
+#   serviceAccountName: workloadidsa
+#   volumes:
+#   - name: test-token
+#     projected:
+#       sources:
+#       - serviceAccountToken:
+#           path: test-token
+#           expirationSeconds: 3600
+#           audience: test
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lab5-task5-appsettings
+  namespace: wid
+data:
+  appsettings.json: |-
+    {
+      "KeyVaultUrl": "https://oidc-kv.vault.azure.net/"
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab5-task5
+  namespace: wid
+  labels:
+    app: lab5-task5
+    azure.workload.identity/use: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lab5-task5
+  template:
+    metadata:
+      labels:
+        app: lab5-task5
+        # aadpodidbinding: api-b
+    spec:
+      serviceAccountName: workloadidsa
+      containers:
+      - name: api
+        image: chineduacr.azurecr.io/apib:v1.1
+        imagePullPolicy: IfNotPresent
+        resources: {}
+        volumeMounts:
+        - name: appsettings
+          mountPath: /app/config          
+      volumes:
+      - name: appsettings
+        configMap:
+          name: lab5-task5-appsettings
